@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Augmentation Pipeline</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🖼️ AWS Image Augmentation Pipeline</h1>
+            <p>Upload any image and get it automatically rotated to 4 different angles (90°, 180°, 270°, 360°)</p>
+        </header>
+
+        <div class="upload-section">
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-content">
+                    <i class="upload-icon">📤</i>
+                    <h3>Drop your image here or click to select</h3>
+                    <p>Supported formats: JPG, JPEG, PNG | Max size: 10MB</p>
+                    <p>Images will be automatically resized to 256×256 pixels</p>
+                </div>
+                <input type="file" id="fileInput" accept="image/jpeg,image/jpg,image/png" hidden>
+            </div>
+            
+            <div class="file-info" id="fileInfo" style="display: none;">
+                <h4>Selected File:</h4>
+                <div id="fileDetails"></div>
+                <button id="uploadBtn" class="upload-btn">Upload & Process</button>
+                <button id="cancelBtn" class="cancel-btn">Cancel</button>
+            </div>
+        </div>
+
+        <div class="status-section" id="statusSection" style="display: none;">
+            <h3>Processing Status</h3>
+            <div class="progress-container">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div id="statusMessage">Uploading image...</div>
+            <div id="processingSteps"></div>
+        </div>
+
+        <div class="results-section" id="resultsSection" style="display: none;">
+            <h3>🎉 Processing Complete!</h3>
+            <div class="results-grid" id="resultsGrid"></div>
+            <div class="download-section">
+                <button id="downloadAllBtn" class="download-btn">Download All Images</button>
+            </div>
+        </div>
+
+        <div class="instructions-section">
+            <h3>📋 How it works:</h3>
+            <ol>
+                <li><strong>Upload:</strong> Select and upload your image (JPG, JPEG, or PNG)</li>
+                <li><strong>Auto-resize:</strong> Image is automatically resized to 256×256 pixels</li>
+                <li><strong>Rotate:</strong> 4 versions are created with different rotations</li>
+                <li><strong>Store:</strong> All images are organized in AWS S3 by rotation angle</li>
+                <li><strong>Download:</strong> Get your processed images instantly</li>
+            </ol>
+        </div>
+
+        <div class="tech-info">
+            <h4>🏗️ Architecture:</h4>
+            <div class="tech-grid">
+                <div class="tech-card">
+                    <strong>S3</strong>
+                    <p>Image storage</p>
+                </div>
+                <div class="tech-card">
+                    <strong>Lambda</strong>
+                    <p>Image processing</p>
+                </div>
+                <div class="tech-card">
+                    <strong>SQS</strong>
+                    <p>Task queuing</p>
+                </div>
+                <div class="tech-card">
+                    <strong>CloudWatch</strong>
+                    <p>Monitoring</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="upload.js"></script>
+</body>
+</html>
