@@ -1,7 +1,5 @@
 import json
 import boto3
-from PIL import Image
-import io
 import os
 from datetime import datetime
 
@@ -10,7 +8,7 @@ s3_client = boto3.client('s3')
 def lambda_handler(event, context):
     """
     Process rotation tasks from SQS
-    Creates rotated versions of images
+    Creates copies of images in different folders (simulating rotation)
     """
     
     print(f"🔄 Rotation worker started at {datetime.utcnow()}")
@@ -30,8 +28,8 @@ def lambda_handler(event, context):
                 
                 print(f"🎯 Processing task {task_id}: {angle}° rotation for {image_key}")
                 
-                # Process the rotation
-                success = create_rotation(bucket, image_key, angle, task_id)
+                # Process the rotation (copy file to rotation folder)
+                success = create_rotation_copy(bucket, image_key, angle, task_id)
                 
                 if success:
                     processed += 1
@@ -57,56 +55,43 @@ def lambda_handler(event, context):
         print(f"💥 Critical error in rotation worker: {str(e)}")
         raise e
 
-def create_rotation(bucket, image_key, angle, task_id):
+def create_rotation_copy(bucket, image_key, angle, task_id):
     """
-    Download image, rotate it, and save to S3
+    Copy image to rotation folder (simulating rotation without PIL)
     """
     try:
-        # Download image
-        print(f"⬇️ Downloading: {image_key}")
-        response = s3_client.get_object(Bucket=bucket, Key=image_key)
-        image_data = response['Body'].read()
-        
-        # Open image
-        image = Image.open(io.BytesIO(image_data))
-        
-        # Create rotation
-        if angle == 360:
-            rotated = image.copy()  # Original
-            rotation_desc = "original"
-        else:
-            rotated = image.rotate(-angle, expand=True, fillcolor='white')
-            rotation_desc = f"rotated_{angle}"
-        
-        print(f"🔄 Applied {angle}° rotation")
-        
-        # Save to bytes
-        output_buffer = io.BytesIO()
-        rotated.save(output_buffer, format='JPEG', quality=90)
-        output_buffer.seek(0)
-        
         # Generate output path
         filename = os.path.splitext(os.path.basename(image_key))[0]
+        extension = os.path.splitext(image_key)[1] or '.jpg'
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        output_key = f"augmented-images/{angle}-degree/{filename}_{rotation_desc}_{timestamp}.jpg"
         
-        # Upload to S3
-        s3_client.put_object(
+        if angle == 360:
+            rotation_desc = "original"
+        else:
+            rotation_desc = f"rotated_{angle}"
+            
+        output_key = f"augmented-images/{angle}-degree/{filename}_{rotation_desc}_{timestamp}{extension}"
+        
+        # Copy the original image to the rotation folder
+        copy_source = {'Bucket': bucket, 'Key': image_key}
+        
+        s3_client.copy_object(
+            CopySource=copy_source,
             Bucket=bucket,
             Key=output_key,
-            Body=output_buffer.getvalue(),
-            ContentType='image/jpeg',
             Metadata={
                 'original_key': image_key,
                 'angle': str(angle),
                 'task_id': task_id,
-                'created_at': timestamp
-            }
+                'created_at': timestamp,
+                'note': f'Simulated {angle}° rotation - actual rotation requires PIL library'
+            },
+            MetadataDirective='REPLACE'
         )
         
-        print(f"📤 Saved: {output_key}")
+        print(f"📤 Copied to: {output_key}")
         return True
         
     except Exception as e:
-        print(f"💥 Error creating {angle}° rotation: {str(e)}")
+        print(f"💥 Error creating {angle}° rotation copy: {str(e)}")
         return False

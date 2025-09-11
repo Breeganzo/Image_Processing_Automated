@@ -172,12 +172,6 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# Use a public Lambda layer that includes Pillow
-locals {
-  # Public Pillow layer ARN for us-east-1 (AWS maintains this)
-  pillow_layer_arn = "arn:aws:lambda:${var.aws_region}:770693421928:layer:Klayers-p39-Pillow:1"
-}
-
 # Create ZIP packages for Lambda deployment (code only, no dependencies)
 data "archive_file" "image_processor_zip" {
   type        = "zip"
@@ -203,7 +197,6 @@ resource "aws_lambda_function" "image_processor" {
   source_code_hash = data.archive_file.image_processor_zip.output_base64sha256
   timeout         = var.lambda_timeout
   memory_size     = var.lambda_memory
-  layers          = [local.pillow_layer_arn]
 
   environment {
     variables = {
@@ -230,7 +223,6 @@ resource "aws_lambda_function" "rotation_worker" {
   source_code_hash = data.archive_file.rotation_worker_zip.output_base64sha256
   timeout         = var.lambda_timeout
   memory_size     = var.lambda_memory
-  layers          = [local.pillow_layer_arn]
 
   environment {
     variables = {

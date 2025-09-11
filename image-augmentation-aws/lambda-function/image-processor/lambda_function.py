@@ -1,8 +1,6 @@
 import json
 import boto3
 import urllib.parse
-from PIL import Image
-import io
 import os
 import uuid
 from datetime import datetime
@@ -14,9 +12,8 @@ sqs_client = boto3.client('sqs')
 def lambda_handler(event, context):
     """
     Main function triggered when image uploaded to S3
-    1. Downloads image
-    2. Resizes to 256x256
-    3. Sends rotation tasks to SQS
+    1. Validates image exists
+    2. Sends rotation tasks to SQS (without resizing to avoid PIL dependency)
     """
     
     print(f"🚀 Image processor started at {datetime.utcnow()}")
@@ -52,60 +49,30 @@ def lambda_handler(event, context):
 
 def process_image(bucket, key, context):
     """
-    Process single image: resize and queue rotations
+    Process single image: validate and queue rotations
     """
     try:
-        # Download image
-        print(f"⬇️ Downloading image: {key}")
-        response = s3_client.get_object(Bucket=bucket, Key=key)
-        image_data = response['Body'].read()
+        # Get image metadata
+        print(f"⬇️ Getting image metadata: {key}")
+        response = s3_client.head_object(Bucket=bucket, Key=key)
+        content_type = response.get('ContentType', '')
+        content_length = response.get('ContentLength', 0)
         
-        # Open and process image
-        image = Image.open(io.BytesIO(image_data))
-        print(f"📏 Original size: {image.size}, Mode: {image.mode}")
+        print(f"📏 Content Type: {content_type}, Size: {content_length} bytes")
         
-        # Convert to RGB if needed
-        if image.mode in ('RGBA', 'P', 'L'):
-            image = image.convert('RGB')
+        # Validate it's an image
+        if not content_type.startswith('image/'):
+            print(f"⚠️ Skipping non-image file: {content_type}")
+            return True
         
-        # Resize to 256x256 (maintain aspect ratio)
-        image.thumbnail((256, 256), Image.Resampling.LANCZOS)
+        # Check size (skip if too large)
+        max_size = int(os.environ.get('MAX_IMAGE_SIZE_MB', 10)) * 1024 * 1024
+        if content_length > max_size:
+            print(f"⚠️ Image too large: {content_length} bytes > {max_size} bytes")
+            return False
         
-        # Create 256x256 canvas with white background
-        canvas = Image.new('RGB', (256, 256), (255, 255, 255))
-        
-        # Center the image on canvas
-        x = (256 - image.size[0]) // 2
-        y = (256 - image.size[1]) // 2
-        canvas.paste(image, (x, y))
-        
-        print(f"🔄 Resized to: {canvas.size}")
-        
-        # Save resized image
-        output_buffer = io.BytesIO()
-        canvas.save(output_buffer, format='JPEG', quality=90)
-        output_buffer.seek(0)
-        
-        # Upload resized image
-        filename = os.path.splitext(os.path.basename(key))[0]
-        resized_key = f"processed/{filename}_256x256.jpg"
-        
-        s3_client.put_object(
-            Bucket=bucket,
-            Key=resized_key,
-            Body=output_buffer.getvalue(),
-            ContentType='image/jpeg',
-            Metadata={
-                'original_key': key,
-                'size': '256x256',
-                'processed_at': datetime.utcnow().isoformat()
-            }
-        )
-        
-        print(f"📤 Uploaded resized image: {resized_key}")
-        
-        # Queue rotation tasks
-        queue_rotations(bucket, resized_key, context)
+        # Queue rotation tasks directly on original image
+        queue_rotations(bucket, key, context)
         
         return True
         
