@@ -37,14 +37,6 @@ output "cloudwatch_log_groups" {
   }
 }
 
-output "ecr_repositories" {
-  description = "ECR repository URLs for Lambda container images"
-  value = {
-    image_processor = aws_ecr_repository.image_processor_repo.repository_url
-    rotation_worker = aws_ecr_repository.rotation_worker_repo.repository_url
-  }
-}
-
 output "deployment_info" {
   description = "Deployment information"
   value = {
@@ -54,12 +46,12 @@ output "deployment_info" {
   }
 }
 
-output "Upload_Instruction" {
+output "upload_instruction" {
   description = "Instruction to upload images"
   value = "Upload images to s3://${aws_s3_bucket.image_bucket.bucket}/ to trigger automatic processing"
 }
 
-output "aws_region"{
-    description = "AWS Region where resources are deployed"
-    value       = var.aws_region
+output "aws_region" {
+  description = "AWS Region where resources are deployed"
+  value       = var.aws_region
 }

@@ -31,7 +31,7 @@ resource "random_string" "suffix"{
 }
 
 resource "aws_s3_bucket" "image_bucket" {
-    bucket = "${var.project_name}-${var.environment}-${random_string.suffix.result}"
+    bucket = "${lower(var.project_name)}-${lower(var.environment)}-${random_string.suffix.result}"
 }
 
 resource "aws_s3_bucket_versioning" "image_bucket_versioning" {
@@ -166,59 +166,83 @@ resource "aws_iam_role_policy" "lambda_policy" {
   })
 }
 
-# ECR repositories for Lambda container images
-resource "aws_ecr_repository" "image_processor_repo" {
-    name = "${var.project_name}-image-processor"
-    image_tag_mutability = "MUTABLE"
-    
-    image_scanning_configuration {
-        scan_on_push = true
-    }
+# Attach basic Lambda execution role to the Lambda IAM role
+resource "aws_iam_role_policy_attachment" "lambda_logs" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-resource "aws_ecr_repository" "rotation_worker_repo" {
-    name = "${var.project_name}-rotation-worker"
-    image_tag_mutability = "MUTABLE"
-    
-    image_scanning_configuration {
-        scan_on_push = true
-    }
+# Use a public Lambda layer that includes Pillow
+locals {
+  # Public Pillow layer ARN for us-east-1 (AWS maintains this)
+  pillow_layer_arn = "arn:aws:lambda:${var.aws_region}:770693421928:layer:Klayers-p39-Pillow:1"
 }
 
-# Lambda function for image processing (Container-based)
+# Create ZIP packages for Lambda deployment (code only, no dependencies)
+data "archive_file" "image_processor_zip" {
+  type        = "zip"
+  source_dir  = "../lambda-function/image-processor"
+  output_path = "../lambda-function/image-processor.zip"
+  excludes    = ["*.md", "deploy.sh", "requirements.txt", "build"]
+}
+
+data "archive_file" "rotation_worker_zip" {
+  type        = "zip"
+  source_dir  = "../lambda-function/rotation-worker"
+  output_path = "../lambda-function/rotation-worker.zip"
+  excludes    = ["*.md", "deploy.sh", "requirements.txt", "build"]
+}
+
+# Lambda function for image processing (ZIP-based)
 resource "aws_lambda_function" "image_processor" {
-    function_name = "${var.project_name}-image-processor-${var.environment}"
-    role = aws_iam_role.lambda_role.arn
-    package_type = "Image"
-    image_uri = "${aws_ecr_repository.image_processor_repo.repository_url}:latest"
-    timeout = var.lambda_timeout
-    memory_size = var.lambda_memory
+  function_name    = "${var.project_name}-image-processor-${var.environment}"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "lambda_function.lambda_handler"
+  runtime         = "python3.9"
+  filename        = data.archive_file.image_processor_zip.output_path
+  source_code_hash = data.archive_file.image_processor_zip.output_base64sha256
+  timeout         = var.lambda_timeout
+  memory_size     = var.lambda_memory
+  layers          = [local.pillow_layer_arn]
 
-    environment {
-      variables = {
-        SQS_QUEUE_URL = aws_sqs_queue.rotation_queue.url
-        ENVIRONMENT = var.environment
-        MAX_IMAGE_SIZE_MB = var.max_image_size_mb
-      }
+  environment {
+    variables = {
+      SQS_QUEUE_URL     = aws_sqs_queue.rotation_queue.url
+      S3_BUCKET         = aws_s3_bucket.image_bucket.bucket
+      ENVIRONMENT       = var.environment
+      MAX_IMAGE_SIZE_MB = var.max_image_size_mb
     }
-    depends_on = [ aws_cloudwatch_log_group.image_processor_logs ]
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.lambda_logs,
+    aws_cloudwatch_log_group.image_processor_logs
+  ]
 }
 
-# Lambda function for rotating images (Container-based)
+# Lambda function for rotating images (ZIP-based)
 resource "aws_lambda_function" "rotation_worker" {
-    function_name = "${var.project_name}-rotation-worker-${var.environment}"
-    role = aws_iam_role.lambda_role.arn
-    package_type = "Image"
-    image_uri = "${aws_ecr_repository.rotation_worker_repo.repository_url}:latest"
-    timeout = var.lambda_timeout
-    memory_size = var.lambda_memory
+  function_name    = "${var.project_name}-rotation-worker-${var.environment}"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "lambda_function.lambda_handler"
+  runtime         = "python3.9"
+  filename        = data.archive_file.rotation_worker_zip.output_path
+  source_code_hash = data.archive_file.rotation_worker_zip.output_base64sha256
+  timeout         = var.lambda_timeout
+  memory_size     = var.lambda_memory
+  layers          = [local.pillow_layer_arn]
 
-    environment {
-      variables = {
-        ENVIRONMENT = var.environment
-      }
+  environment {
+    variables = {
+      S3_BUCKET   = aws_s3_bucket.image_bucket.bucket
+      ENVIRONMENT = var.environment
     }
-    depends_on = [ aws_cloudwatch_log_group.rotation_worker_logs ]
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.lambda_logs,
+    aws_cloudwatch_log_group.rotation_worker_logs
+  ]
 }
 
 #S3 bucket notification to trigger image processor Lambda
